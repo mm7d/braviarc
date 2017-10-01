@@ -1,10 +1,12 @@
 """
 Sony Bravia RC API
-
 By Antonio Parraga Navarro
-
 dedicated to Isabel
 
+Updated by G3rard for Home Assistant
+    Changes:
+    * use Pre-shared key (PSK) instead of connecting with a pin and the use of a cookie
+    * added function to calculate the playing time in %
 """
 import logging
 import base64
@@ -14,17 +16,21 @@ import socket
 import struct
 import requests
 
-TIMEOUT = 10
+from datetime import datetime
+import time
+import sys
+
+TIMEOUT = 5 # timeout in seconds
 
 _LOGGER = logging.getLogger(__name__)
 
-
 class BraviaRC:
 
-    def __init__(self, host, mac=None):  # mac address is optional but necessary if we want to turn on the TV
+    def __init__(self, host, psk, mac=None):  # mac address is optional but necessary if we want to turn on the TV
         """Initialize the Sony Bravia RC class."""
 
         self._host = host
+        self._psk = psk
         self._mac = mac
         self._cookies = None
         self._commands = []
@@ -39,7 +45,6 @@ class BraviaRC:
 
     def connect(self, pin, clientid, nickname):
         """Connect to TV and get authentication cookie.
-
         Parameters
         ---------
         pin: str
@@ -48,7 +53,6 @@ class BraviaRC:
             Client ID.
         nickname: str
             Client human friendly name.
-
         Returns
         -------
         bool
@@ -118,7 +122,7 @@ class BraviaRC:
 
     def send_req_ircc(self, params, log_errors=True):
         """Send an IRCC command via HTTP to Sony Bravia."""
-        headers = {'SOAPACTION': '"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC"'}
+        headers = {'X-Auth-PSK': self._psk, 'SOAPACTION': '"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC"'}
         data = ("<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org" +
                 "/soap/envelope/\" " +
                 "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>" +
@@ -128,7 +132,6 @@ class BraviaRC:
         try:
             response = requests.post('http://' + self._host + '/sony/IRCC',
                                      headers=headers,
-                                     cookies=self._cookies,
                                      data=data,
                                      timeout=TIMEOUT)
         except requests.exceptions.HTTPError as exception_instance:
@@ -147,7 +150,7 @@ class BraviaRC:
         try:
             response = requests.post('http://'+self._host+'/'+url,
                                      data=params.encode("UTF-8"),
-                                     cookies=self._cookies,
+                                     headers={'X-Auth-PSK': self._psk},
                                      timeout=TIMEOUT)
         except requests.exceptions.HTTPError as exception_instance:
             if log_errors:
@@ -210,6 +213,7 @@ class BraviaRC:
         return return_value
 
     def get_playing_info(self):
+        """Get information on program that is shown on TV."""
         return_value = {}
         resp = self.bravia_req_json("sony/avContent", self._jdata_build("getPlayingContentInfo", None))
         if resp is not None and not resp.get('error'):
@@ -263,6 +267,30 @@ class BraviaRC:
             _LOGGER.error("JSON request error:" + json.dumps(resp, indent=4))
         return None
 
+    def get_system_info(self):
+        """Get info on TV."""
+        return_value = {}
+        resp = self.bravia_req_json("sony/system", self._jdata_build("getSystemInformation", None))
+        if resp is not None and not resp.get('error'):
+            #print('=>', resp, '<=')
+            system_content_data = resp.get('result')[0]
+            return_value['name'] = system_content_data.get('name')
+            return_value['model'] = system_content_data.get('model')
+            return_value['language'] = system_content_data.get('language')
+        return return_value
+
+    def get_network_info(self):
+        """Get info on network."""
+        return_value = {}
+        resp = self.bravia_req_json("sony/system", self._jdata_build("getNetworkSettings", None))
+        if resp is not None and not resp.get('error'):
+            #print('=>', resp, '<=')
+            network_content_data = resp.get('result')[0]
+            return_value['mac'] = network_content_data[0]['hwAddr']
+            return_value['ip'] = network_content_data[0]['ipAddrV4']
+            return_value['gateway'] = network_content_data[0]['gateway']
+        return return_value
+
     def set_volume_level(self, volume):
         """Set volume level, range 0..1."""
         self.bravia_req_json("sony/audio", self._jdata_build("setAudioVolume", {"target": "speaker",
@@ -274,6 +302,12 @@ class BraviaRC:
         # Try using the power on command incase the WOL doesn't work
         if self.get_power_status() != 'active':
             self.send_req_ircc(self.get_command_code('TvPower'))
+
+    def turn_on_command(self):
+        """Turn the media player on using command. Only confirmed working on Android, can be used when WOL is not available."""
+        if self.get_power_status() != 'active':
+            self.send_req_ircc(self.get_command_code('TvPower'))
+            self.bravia_req_json("sony/system", self._jdata_build("setPowerStatus", {"status": "true"}))
 
     def turn_off(self):
         """Turn off media player."""
@@ -287,7 +321,7 @@ class BraviaRC:
         """Volume down media player."""
         self.send_req_ircc(self.get_command_code('VolumeDown'))
 
-    def mute_volume(self, mute):
+    def mute_volume(self):
         """Send mute command."""
         self.send_req_ircc(self.get_command_code('Mute'))
 
@@ -318,3 +352,38 @@ class BraviaRC:
     def media_previous_track(self):
         """Send the previous track command."""
         self.send_req_ircc(self.get_command_code('Prev'))
+
+    def calc_time(self, *times):
+        """Calculate the sum of times, value is returned in HH:MM."""
+        totalSecs = 0
+        for tm in times:
+            timeParts = [int(s) for s in tm.split(':')]
+            totalSecs += (timeParts[0] * 60 + timeParts[1]) * 60 + timeParts[2]
+        totalSecs, sec = divmod(totalSecs, 60)
+        hr, min = divmod(totalSecs, 60)
+        if hr >= 24: #set 24:10 to 00:10
+            hr -= 24
+        return ("%02d:%02d" % (hr, min))
+    
+    def playing_time(self, startDateTime, durationSec):
+        """Give starttime, endtime and percentage played."""
+        #get starttime (2017-03-24T00:00:00+0100) and calculate endtime with duration (secs)
+        date_format = "%Y-%m-%dT%H:%M:%S"
+        try:
+            playingtime = datetime.now() - datetime.strptime(startDateTime[:-5], date_format)
+        except TypeError:
+            #https://docs.python.org/3/library/datetime.html#strftime-strptime-behavior
+            #playingtime = datetime.now() - datetime.fromtimestamp(time.mktime(time.strptime(startDateTime[:-5], date_format)))
+            playingtime = datetime.now() - datetime(*(time.strptime(startDateTime[:-5], date_format)[0:6]))
+        try:
+            starttime = datetime.time(datetime.strptime(startDateTime[:-5], date_format))
+        except TypeError:
+            #starttime = datetime.time(datetime.fromtimestamp(time.mktime(time.strptime(startDateTime[:-5], date_format))))
+            starttime = datetime.time(datetime(*(time.strptime(startDateTime[:-5], date_format)[0:6])))
+        
+        duration = time.strftime('%H:%M:%S', time.gmtime(durationSec))
+        endtime = self.calc_time(str(starttime), str(duration))
+        starttime = starttime.strftime('%H:%M')
+        #print(playingtime.seconds, tvplaying['durationSec'])
+        perc_playingtime = int(round(((playingtime.seconds / durationSec) * 100),0))
+        return str(starttime), str(endtime), str(perc_playingtime)
