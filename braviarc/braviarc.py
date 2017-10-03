@@ -128,7 +128,7 @@ class BraviaRC:
                 "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>" +
                 "<u:X_SendIRCC " +
                 "xmlns:u=\"urn:schemas-sony-com:service:IRCC:1\"><IRCCCode>" +
-                params+"</IRCCCode></u:X_SendIRCC></s:Body></s:Envelope>").encode("UTF-8")
+                params + "</IRCCCode></u:X_SendIRCC></s:Body></s:Envelope>").encode("UTF-8")
         try:
             response = requests.post('http://' + self._host + '/sony/IRCC',
                                      headers=headers,
@@ -299,9 +299,6 @@ class BraviaRC:
     def turn_on(self):
         """Turn the media player on."""
         self._wakeonlan()
-        # Try using the power on command incase the WOL doesn't work
-        if self.get_power_status() != 'active':
-            self.send_req_ircc(self.get_command_code('TvPower'))
 
     def turn_on_command(self):
         """Turn the media player on using command. Only confirmed working on Android, can be used when WOL is not available."""
