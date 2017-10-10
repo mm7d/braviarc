@@ -6,7 +6,7 @@ dedicated to Isabel
 Updated by G3rard for Home Assistant
     Changes:
     * use Pre-shared key (PSK) instead of connecting with a pin and the use of a cookie
-    * added function to calculate the playing time in %
+    * added function to calculate the media position
 """
 import logging
 import base64
@@ -14,11 +14,11 @@ import collections
 import json
 import socket
 import struct
-import requests
-
 from datetime import datetime
 import time
 import sys
+
+import requests
 
 TIMEOUT = 5 # timeout in seconds
 
@@ -381,6 +381,12 @@ class BraviaRC:
         duration = time.strftime('%H:%M:%S', time.gmtime(durationSec))
         endtime = self.calc_time(str(starttime), str(duration))
         starttime = starttime.strftime('%H:%M')
-        #print(playingtime.seconds, tvplaying['durationSec'])
         perc_playingtime = int(round(((playingtime.seconds / durationSec) * 100),0))
-        return str(starttime), str(endtime), str(perc_playingtime)
+        playingtime = playingtime.seconds
+
+        return_value = {}
+        return_value['starttime'] = starttime
+        return_value['endtime'] = endtime
+        return_value['media_position'] = playingtime
+        return_value['media_position_perc'] = perc_playingtime
+        return return_value
