@@ -20,7 +20,7 @@ import sys
 
 import requests
 
-TIMEOUT = 5 # timeout in seconds
+TIMEOUT = 10 # timeout in seconds
 
 _LOGGER = logging.getLogger(__name__)
 
