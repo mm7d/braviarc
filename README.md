@@ -1,55 +1,13 @@
-# BraviaRC Python Package
+# Sony Bravia PSK Python Package
 
-Installation
-------------
+## About
 
--  ``pip3 install git+https://github.com/aparraga/braviarc.git``
-
-About
-=====
-
-``BraviaRC`` is a Python library for remote communication with Sony Bravia TVs 2013 and newer
+``sony_bravia_psk`` is a Python library for remote communication with Sony Bravia TVs 2014 and newer which support a Pre-Shared Key
 (http://info.tvsideview.sony.net/en_ww/home_device.html#bravia)
 
-Requirements
-============
+## Thank you
+The source of this is the great work of Antonio Parraga on https://github.com/aparraga/braviarc. That version is being used to
+add the PSK functionality.
 
-Python 3.3 or 3.4 is required.
-
-Usage
-=====
-
-```python
-
-#new instance for TV at 192.168.1.25
-braviarc = BraviaRC('192.168.1.25')
-
-#connect to the instance (or register)
-pin = '1878'
-braviarc.connect(pin, 'my_device_id', 'my device name')
-
-#check connection
-if braviarc.is_connected():
-
-  #get power status
-  power_status = braviarc.get_power_status()
-  print (power_status)
-
-  #get playing info
-  playing_content = braviarc.get_playing_info()
-
-  #print current playing channel
-  print (playing_content.get('title'))
-
-  #get volume info
-  volume_info = braviarc.get_volume_info()
-
-  #print current volume
-  print (volume_info.get('volume'))
-
-  #change channel
-  braviarc.play_content(uri)
-
-  #turn off the TV
-  braviarc.turn_off()
-
+## Home Assistant
+This version is being developed for use in Home Assistant.

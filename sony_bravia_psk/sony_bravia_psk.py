@@ -3,10 +3,10 @@ Sony Bravia RC API
 By Antonio Parraga Navarro
 dedicated to Isabel
 
-Updated by G3rard for Home Assistant
+Updated by Gerard for use in Home Assistant
     Changes:
-    * use Pre-shared key (PSK) instead of connecting with a pin and the use of a cookie
-    * added function to calculate the playing time in %
+    * Use Pre-shared key (PSK) instead of connecting with a pin and the use of a cookie
+    * Added function to calculate the media position
 """
 import logging
 import base64
@@ -14,13 +14,13 @@ import collections
 import json
 import socket
 import struct
-import requests
-
 from datetime import datetime
 import time
 import sys
 
-TIMEOUT = 5 # timeout in seconds
+import requests
+
+TIMEOUT = 8 # timeout in seconds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -193,7 +193,7 @@ class BraviaRC:
         if not resp.get('error'):
             results = resp.get('result')[0]
             for result in results:
-                if result['source'] in ['tv:dvbc', 'tv:dvbt']:  # tv:dvbc = via cable, tv:dvbt = via DTT
+                if result['source'] in ['tv:dvbc', 'tv:dvbt', 'tv:dvbs']:  # tv:dvbc = via cable, tv:dvbt = via DTT, tv:dvbs = via satellite
                     original_content_list.extend(self.get_source(result['source']))
 
         resp = self.bravia_req_json("sony/avContent",
@@ -342,6 +342,10 @@ class BraviaRC:
         """Send media pause command to media player."""
         self.send_req_ircc(self.get_command_code('Pause'))
 
+    def media_tvpause(self):
+        """Send tv pause command to media player."""
+        self.send_req_ircc(self.get_command_code('TvPause'))
+
     def media_next_track(self):
         """Send next track command."""
         self.send_req_ircc(self.get_command_code('Next'))
@@ -352,35 +356,39 @@ class BraviaRC:
 
     def calc_time(self, *times):
         """Calculate the sum of times, value is returned in HH:MM."""
-        totalSecs = 0
-        for tm in times:
-            timeParts = [int(s) for s in tm.split(':')]
-            totalSecs += (timeParts[0] * 60 + timeParts[1]) * 60 + timeParts[2]
-        totalSecs, sec = divmod(totalSecs, 60)
-        hr, min = divmod(totalSecs, 60)
-        if hr >= 24: #set 24:10 to 00:10
-            hr -= 24
-        return ("%02d:%02d" % (hr, min))
-    
-    def playing_time(self, startDateTime, durationSec):
+        total_secs = 0
+        for tms in times:
+            time_parts = [int(s) for s in tms.split(':')]
+            total_secs += (time_parts[0] * 60 + time_parts[1]) * 60 + time_parts[2]
+        total_secs, sec = divmod(total_secs, 60)
+        hour, minute = divmod(total_secs, 60)
+        if hour >= 24: #set 24:10 to 00:10
+            hour -= 24
+        return ("%02d:%02d" % (hour, minute))
+
+    def playing_time(self, startdatetime, durationsec):
         """Give starttime, endtime and percentage played."""
         #get starttime (2017-03-24T00:00:00+0100) and calculate endtime with duration (secs)
         date_format = "%Y-%m-%dT%H:%M:%S"
         try:
-            playingtime = datetime.now() - datetime.strptime(startDateTime[:-5], date_format)
+            playingtime = datetime.now() - datetime.strptime(startdatetime[:-5], date_format)
         except TypeError:
             #https://docs.python.org/3/library/datetime.html#strftime-strptime-behavior
-            #playingtime = datetime.now() - datetime.fromtimestamp(time.mktime(time.strptime(startDateTime[:-5], date_format)))
-            playingtime = datetime.now() - datetime(*(time.strptime(startDateTime[:-5], date_format)[0:6]))
+            playingtime = datetime.now() - datetime(*(time.strptime(startdatetime[:-5], date_format)[0:6]))
         try:
-            starttime = datetime.time(datetime.strptime(startDateTime[:-5], date_format))
+            starttime = datetime.time(datetime.strptime(startdatetime[:-5], date_format))
         except TypeError:
-            #starttime = datetime.time(datetime.fromtimestamp(time.mktime(time.strptime(startDateTime[:-5], date_format))))
-            starttime = datetime.time(datetime(*(time.strptime(startDateTime[:-5], date_format)[0:6])))
+            starttime = datetime.time(datetime(*(time.strptime(startdatetime[:-5], date_format)[0:6])))
         
-        duration = time.strftime('%H:%M:%S', time.gmtime(durationSec))
+        duration = time.strftime('%H:%M:%S', time.gmtime(durationsec))
         endtime = self.calc_time(str(starttime), str(duration))
         starttime = starttime.strftime('%H:%M')
-        #print(playingtime.seconds, tvplaying['durationSec'])
-        perc_playingtime = int(round(((playingtime.seconds / durationSec) * 100),0))
-        return str(starttime), str(endtime), str(perc_playingtime)
+        perc_playingtime = int(round(((playingtime.seconds / durationsec) * 100),0))
+        playingtime = playingtime.seconds
+
+        return_value = {}
+        return_value['start_time'] = starttime
+        return_value['end_time'] = endtime
+        return_value['media_position'] = playingtime
+        return_value['media_position_perc'] = perc_playingtime
+        return return_value
