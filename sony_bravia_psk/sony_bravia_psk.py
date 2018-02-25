@@ -2,11 +2,11 @@
 Sony Bravia RC API
 By Antonio Parraga Navarro
 dedicated to Isabel
-
 Updated by Gerard for use in Home Assistant
     Changes:
     * Use Pre-shared key (PSK) instead of connecting with a pin and the use of a cookie
     * Added function to calculate the media position
+    * added support for custom broadcast address
 """
 import logging
 import base64
@@ -24,7 +24,7 @@ TIMEOUT = 8 # timeout in seconds
 
 _LOGGER = logging.getLogger(__name__)
 
-class BraviaRC:
+class BraviaRC(object):
 
     def __init__(self, host, psk, mac=None):  # mac address is optional but necessary if we want to turn on the TV
         """Initialize the Sony Bravia RC class."""
@@ -85,6 +85,10 @@ class BraviaRC:
         except requests.exceptions.HTTPError as exception_instance:
             _LOGGER.error("[W] HTTPError: " + str(exception_instance))
             return False
+        
+        except requests.exceptions.Timeout as exception_instance:
+            _LOGGER.error("[W] Timeout occurred: " + str(exception_instance))
+            return False
 
         except Exception as exception_instance:  # pylint: disable=broad-except
             _LOGGER.error("[W] Exception: " + str(exception_instance))
@@ -105,7 +109,7 @@ class BraviaRC:
         else:
             return True
 
-    def _wakeonlan(self):
+    def _wakeonlan(self,broadcast):
         if self._mac is not None:
             addr_byte = self._mac.split(':')
             hw_addr = struct.pack('BBBBBB', int(addr_byte[0], 16),
@@ -117,7 +121,7 @@ class BraviaRC:
             msg = b'\xff' * 6 + hw_addr * 16
             socket_instance = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             socket_instance.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            socket_instance.sendto(msg, ('<broadcast>', 9))
+            socket_instance.sendto(msg, (broadcast, 9))
             socket_instance.close()
 
     def send_req_ircc(self, params, log_errors=True):
@@ -137,6 +141,10 @@ class BraviaRC:
         except requests.exceptions.HTTPError as exception_instance:
             if log_errors:
                 _LOGGER.error("HTTPError: " + str(exception_instance))
+        
+        except requests.exceptions.Timeout as exception_instance:
+            if log_errors:
+                _LOGGER.error("Timeout occurred: " + str(exception_instance))
 
         except Exception as exception_instance:  # pylint: disable=broad-except
             if log_errors:
@@ -155,6 +163,10 @@ class BraviaRC:
         except requests.exceptions.HTTPError as exception_instance:
             if log_errors:
                 _LOGGER.error("HTTPError: " + str(exception_instance))
+        
+        except requests.exceptions.Timeout as exception_instance:
+            if log_errors:
+                _LOGGER.error("Timeout occurred: " + str(exception_instance))
 
         except Exception as exception_instance:  # pylint: disable=broad-except
             if log_errors:
@@ -296,9 +308,9 @@ class BraviaRC:
         self.bravia_req_json("sony/audio", self._jdata_build("setAudioVolume", {"target": "speaker",
                                                                                 "volume": volume * 100}))
 
-    def turn_on(self):
+    def turn_on(self,broadcast = "255.255.255.255"):
         """Turn the media player on."""
-        self._wakeonlan()
+        self._wakeonlan(broadcast)
 
     def turn_on_command(self):
         """Turn the media player on using command. Only confirmed working on Android, can be used when WOL is not available."""
